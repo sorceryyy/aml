@@ -24,5 +24,7 @@ class DataProcessor():
                     }
         #for pdr
         linear = self.data["lin"].columns[1:4].values
-        self.pdr_data
+        gravity = self.data["acc"].columns[1:4].values
+        magnetometer = self.data["gyr"].columns[1:4].values
+        self.pdr_data = {"linear":linear,"gravity":gravity,"magnetometer":magnetometer}
 

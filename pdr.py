@@ -20,23 +20,29 @@ plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 class Model(object):
-    def __init__(self, linear, gravity, rotation):
+    def __init__(self, linear, gravity, magnetometer):
         self.linear = linear
         self.gravity = gravity
-        self.rotation = rotation
+        self.magnetometer = magnetometer
 
     '''
-        四元数转化为欧拉角
+        用accelerometer 和 magnetometer计算欧拉角
     '''
     def quaternion2euler(self):
-        rotation = self.rotation
-        x = rotation[:, 0]
-        y = rotation[:, 1]
-        z = rotation[:, 2]
-        w = rotation[:, 3]
-        pitch = np.arcsin(2*(w*y-z*x))
-        roll = np.arctan2(2*(w*x+y*z),1-2*(x*x+y*y))
-        yaw = np.arctan2(2*(w*z+x*y),1-2*(z*z+y*y))
+        #TODO:check, accelerometer 用带重力的，以后试试不带重力的
+        accelX = self.gravity[0]
+        accelY = self.gravity[1]
+        accelZ = self.gravity[2]
+        magX = self.magnetometer[0]
+        magY = self.magnetometer[1]
+        magZ = self.magnetometer[2]
+
+        pitch = np.arctan2(accelY, np.sqrt(accelX **2 + accelZ**2))
+        roll = np.arctan2(-accelX, np.sqrt(accelY**2 + accelZ**2))
+        
+        Yh = (magY * np.cos(roll)) - (magZ * np.sin(roll))
+        Xh = (magX * np.cos(pitch))+(magY * np.sin(roll)*np.sin(pitch)) + (magZ * np.cos(roll) * np.sin(pitch))
+        yaw = np.arctan2(Yh,Xh)
         return pitch, roll, yaw
     
     '''
@@ -245,75 +251,6 @@ class Model(object):
         plt.legend()
         plt.show()
 
-    '''
-        显示三轴加速度的变化情况
-    '''
-    def show_data(self, dataType):
-        if dataType=='linear':
-            linear = self.linear
-            x = linear[:,0]
-            y = linear[:,1]
-            z = linear[:,2]
-            index = range(len(x))
-            
-            ax1 = plt.subplot(3,1,1) #第一行第一列图形
-            ax2 = plt.subplot(3,1,2) #第一行第二列图形
-            ax3 = plt.subplot(3,1,3) #第二行
-            plt.sca(ax1)
-            plt.title('x')
-            plt.scatter(index,x)
-            plt.sca(ax2)
-            plt.title('y')
-            plt.scatter(index,y)
-            plt.sca(ax3)
-            plt.title('z')
-            plt.scatter(index,z)
-            plt.show()
-        elif dataType=='gravity':
-            gravity = self.gravity
-            x = gravity[:,0]
-            y = gravity[:,1]
-            z = gravity[:,2]
-            index = range(len(x))
-            
-            ax1 = plt.subplot(3,1,1) #第一行第一列图形
-            ax2 = plt.subplot(3,1,2) #第一行第二列图形
-            ax3 = plt.subplot(3,1,3) #第二行
-            plt.sca(ax1)
-            plt.title('x')
-            plt.scatter(index,x)
-            plt.sca(ax2)
-            plt.title('y')
-            plt.scatter(index,y)
-            plt.sca(ax3)
-            plt.title('z')
-            plt.scatter(index,z)
-            plt.show()
-        else: # rotation
-            rotation = self.rotation
-            x = rotation[:,0]
-            y = rotation[:,1]
-            z = rotation[:,2]
-            w = rotation[:,3]
-            index = range(len(x))
-            
-            ax1 = plt.subplot(4,1,1) #第一行第一列图形
-            ax2 = plt.subplot(4,1,2) #第一行第二列图形
-            ax3 = plt.subplot(4,1,3) #第二行
-            ax4 = plt.subplot(4,1,4) #第二行
-            plt.sca(ax1)
-            plt.title('x')
-            plt.scatter(index,x)
-            plt.sca(ax2)
-            plt.title('y')
-            plt.scatter(index,y)
-            plt.sca(ax3)
-            plt.title('z')
-            plt.scatter(index,z)
-            plt.sca(ax4)
-            plt.title('w')
-            plt.scatter(index,w)
-            plt.show()
 
     '''
         显示PDR运动轨迹图
