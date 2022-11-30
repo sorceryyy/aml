@@ -15,27 +15,30 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from scipy import interpolate
 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
 class Model(object):
-    def __init__(self, linear, gravity, magnetometer):
-        self.linear = linear
-        self.gravity = gravity
-        self.magnetometer = magnetometer
+    def __init__(self, li, gr, ma,pre_locate,time):
+        self.linear = li
+        self.gravity = gr
+        self.magnetometer = ma
+        self.pre_location = pre_locate
+        self.time = time
 
     '''
         用accelerometer 和 magnetometer计算欧拉角
     '''
     def obtain_euler(self):
         #TODO:check, accelerometer 用带重力的，以后试试不带重力的
-        accelX = self.gravity[0]
-        accelY = self.gravity[1]
-        accelZ = self.gravity[2]
-        magX = self.magnetometer[0]
-        magY = self.magnetometer[1]
-        magZ = self.magnetometer[2]
+        accelX = self.gravity[:,0]
+        accelY = self.gravity[:,1]
+        accelZ = self.gravity[:,2]
+        magX = self.magnetometer[:,0]
+        magY = self.magnetometer[:,1]
+        magZ = self.magnetometer[:,2]
 
         pitch = np.arctan2(accelY, np.sqrt(accelX **2 + accelZ**2))
         roll = np.arctan2(-accelX, np.sqrt(accelY**2 + accelZ**2))
@@ -161,6 +164,7 @@ class Model(object):
         position_y.append(y)
         strides = []
         angle = [offset]
+        time = []
         for v in steps:
             index = v['index']
             length = self.step_stride(v['acceleration'])
@@ -171,8 +175,17 @@ class Model(object):
             y = y + length*np.cos(theta)
             position_x.append(x)
             position_y.append(y)
+            time.append(self.time[index])
         # 步长计入一个状态中，最后一个位置没有下一步，因此步长记为0
-        return position_x, position_y, strides + [0], angle
+        return position_x, position_y, strides + [0], angle,time
+
+    '''
+        对于输入data，用10%时间的位置解（相对位置，角）与（经纬度，方向）关系，用来算后面的位置与经纬度关系
+    '''
+    def predict_position(self,x_time):
+        pass
+        
+
 
     '''
     显示步伐检测图像
