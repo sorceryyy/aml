@@ -28,7 +28,7 @@ class Model(object):
     '''
         用accelerometer 和 magnetometer计算欧拉角
     '''
-    def quaternion2euler(self):
+    def obtain_euler(self):
         #TODO:check, accelerometer 用带重力的，以后试试不带重力的
         accelX = self.gravity[0]
         accelY = self.gravity[1]
@@ -139,7 +139,7 @@ class Model(object):
     # 航向角
     # 根据姿势直接使用yaw
     def step_heading(self):
-        _, _, yaw = self.quaternion2euler()
+        _, _, yaw = self.obtain_euler()
         # init_theta = yaw[0] # 初始角度
         for i,v in enumerate(yaw):
             # yaw[i] = -(v-init_theta)
