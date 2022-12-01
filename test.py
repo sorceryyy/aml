@@ -15,7 +15,6 @@ def eval_model(test_path):
 def get_dir_error(gt, pred):
     dir_list = []
     for i in range(int(len(gt) * 0.1), len(gt)):
-        angle1=gt[gt.columns[5]][i] - pred[pred.columns[5]][i]
         obj_angle = gt[gt.columns[5]][i]
         pred_angle = pred[pred.columns[5]][i]
         dir = min(abs(gt[gt.columns[5]][i] - pred[pred.columns[5]][i]), 360 - abs(gt[gt.columns[5]][i] - pred[pred.columns[5]][i]))
