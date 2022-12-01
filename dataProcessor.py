@@ -14,12 +14,12 @@ class DataProcessor():
         self.mag_file = os.path.join(self.path,"Magnetometer.csv")   #磁力
         self.inp_file = os.path.join(self.path,"Location_input.csv")   #位置输入location_input
 
-        self.data = {"acc":pd.read_csv(self.acc_file,header=None), \
-                    "bar": pd.read_csv(self.bar_file,header=None),\
-                    "gyr": pd.read_csv(self.gyr_file,header=None),\
-                    "lin": pd.read_csv(self.lin_file,header=None),\
-                    "mag": pd.read_csv(self.mag_file,header=None),\
-                    "inp": pd.read_csv(self.inp_file,header=None),\
+        self.data = {"acc":pd.read_csv(self.acc_file), \
+                    "bar": pd.read_csv(self.bar_file),\
+                    "gyr": pd.read_csv(self.gyr_file),\
+                    "lin": pd.read_csv(self.lin_file),\
+                    "mag": pd.read_csv(self.mag_file),\
+                    "inp": pd.read_csv(self.inp_file),\
                     }
         #for pdr
         linear =(self.data["lin"].values)[1:,1:].astype(np.float64)
@@ -30,6 +30,7 @@ class DataProcessor():
 
         #计算开始是NAN的行数
         self.start_nan = len(self.data["inp"].dropna(axis=0,how="any"))  #-1是减header,-1是index!
+        self.start_nan = min(len(self.data["inp"])//10 , self.start_nan)
 
         self.pdr_model = pdr.Model(li=linear,gr=gravity,ma=magnetometer, \
         input=location_input,time=time)
@@ -52,6 +53,6 @@ class DataProcessor():
 
     def save_csv(self,file = ""):
         '''input the data, save as csv'''
-        save_path = os.path.abspath(os.path.join(os.getcwd(),file))
+        save_path = os.path.abspath(os.path.join(self.path,file))
         self.pdr_ans.to_csv(save_path)
 
