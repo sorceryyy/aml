@@ -1,7 +1,6 @@
 import pdr
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 
 class DataProcessor():
@@ -29,16 +28,30 @@ class DataProcessor():
         location_input = (self.data["inp"].values)[1:,[1,2,5]].astype(np.float64) #TODO: write in more stable way
         time = (self.data["mag"].values)[1:,0].astype(np.float64)
 
-        self.pdr_model = pdr.Model(li=linear,gr=gravity,ma=magnetometer,pre_locate=location_input,time=time)
-
         #计算开始是NAN的行数
-        self.start_nan = len(self.data["inp"]) - len(self.data["inp"].dropna(axis=0,how="any"))
+        self.start_nan = len(self.data["inp"].dropna(axis=0,how="any"))  #-1是减header,-1是index!
 
-    def get_pdr(self)->pdr.Model:
+        self.pdr_model = pdr.Model(li=linear,gr=gravity,ma=magnetometer, \
+        input=location_input,time=time)
+
+
+    def get_pdr_model(self)->pdr.Model:
         '''return the pdr_model'''
         return self.pdr_model
 
-    def save_csv(file:str):
+    def get_pdr_predict(self):
+        '''use pdr to predict'''
+        self.pdr_ans = self.data["inp"].copy()
+        predict_time = self.data["inp"].values[self.start_nan:,0]
+        p_x,p_y,p_a = self.pdr_model.predict_position(self.start_nan,predict_time)  #TODO这里索引早了，但问题不大
+        for i in range(self.start_nan,len(self.pdr_ans)):
+            self.pdr_ans.iloc[i,1] = p_x[i-self.start_nan]
+            self.pdr_ans.iloc[i,2] = p_y[i-self.start_nan]
+            self.pdr_ans.iloc[i,5] = p_a[i-self.start_nan]
+
+
+    def save_csv(self,file = ""):
         '''input the data, save as csv'''
-        pass
+        save_path = os.path.abspath(os.path.join(os.getcwd(),file))
+        self.pdr_ans.to_csv(save_path)
 

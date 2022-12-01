@@ -13,19 +13,16 @@ numpy.ndarray
 
 import math
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy import interpolate
-
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
+from math import degrees, radians, fmod, atan2
 
 class Model(object):
-    def __init__(self, li, gr, ma,pre_locate,time):
+    def __init__(self, li, gr, ma,input,time):
         self.linear = li
         self.gravity = gr
         self.magnetometer = ma
-        self.pre_location = pre_locate
+        self.input = input  #0:维度，1：经度，2：方向
         self.time = time
 
     '''
@@ -40,12 +37,14 @@ class Model(object):
         magY = self.magnetometer[:,1]
         magZ = self.magnetometer[:,2]
 
-        pitch = np.arctan2(accelY, np.sqrt(accelX **2 + accelZ**2))
-        roll = np.arctan2(-accelX, np.sqrt(accelY**2 + accelZ**2))
+        pitch = np.array([atan2(accelY[i], np.sqrt(accelX[i] **2 + accelZ[i]**2)) \
+            for i in range(len(accelX))])
+        roll = np.array([atan2(-accelX[i], np.sqrt(accelY[i]**2 + accelZ[i]**2)) \
+            for i in range(len(accelX))])
         
         Yh = (magY * np.cos(roll)) - (magZ * np.sin(roll))
         Xh = (magX * np.cos(pitch))+(magY * np.sin(roll)*np.sin(pitch)) + (magZ * np.cos(roll) * np.sin(pitch))
-        yaw = np.arctan2(Yh,Xh)
+        yaw = np.array([atan2(Yh[i],Xh[i]) for i in range(len(magX))])
         return pitch, roll, yaw
     
     '''
@@ -150,10 +149,11 @@ class Model(object):
         return yaw
     
     '''
-        步行轨迹的每一个相对坐标位置
+        步行轨迹的每一个相对坐标位置, offset表示初始角度
         返回的是预测作为坐标
     '''
     def pdr_position(self, frequency=100, walkType='normal', offset=0, initPosition=(0, 0)):
+        #TODO check! 这里返回弧度制
         yaw = self.step_heading()
         steps = self.step_counter(frequency=frequency, walkType=walkType)
         position_x = []
@@ -164,13 +164,13 @@ class Model(object):
         position_y.append(y)
         strides = []
         angle = [offset]
-        time = []
+        time = [0]
         for v in steps:
             index = v['index']
             length = self.step_stride(v['acceleration'])
             strides.append(length)
-            theta = yaw[index] + offset
-            angle.append(theta)
+            theta = yaw[index] + radians(offset)
+            angle.append(degrees(theta))
             x = x + length*np.sin(theta)
             y = y + length*np.cos(theta)
             position_x.append(x)
@@ -182,120 +182,29 @@ class Model(object):
     '''
         对于输入data，用10%时间的位置解（相对位置，角）与（经纬度，方向）关系，用来算后面的位置与经纬度关系
     '''
-    def predict_position(self,x_time):
-        pass
+    def predict_position(self,start_index,predic_time:np.ndarray):
+        #start_index 表示从time中的哪个index 开始预测，
+        #TODO：check!这里我们是去掉表头了！故比写进csv的行号少1！
+        noise = 0.2
+        x_offset = self.input[:,0][start_index-2]*(1-noise) + self.input[:,0][start_index-3]*noise
+        y_offset = self.input[:,1][start_index-2]*(1-noise) + self.input[:,1][start_index-3]*noise
+        n_x,n_y,_,angle,step_time=self.pdr_position()    #TODO check!!!突然想起来算的angle是弧度制啊！！
+
+        #interpolate
+        tck_x = interpolate.splrep(step_time,np.array(n_x))
+        tck_y = interpolate.splrep(step_time,np.array(n_y))
+        tck_a = interpolate.splrep(step_time,np.array(angle))
+
+        tmp_time = np.array(predic_time,dtype=np.float64)
+        move_x = interpolate.splev(tmp_time,tck_x)
+        move_y = interpolate.splev(tmp_time,tck_y)
+        move_a = interpolate.splev(tmp_time,tck_a)
+
+        ans_x = (np.array(move_x) * 0.000009) + x_offset
+        ans_y = (np.array(move_y) * 0.00001141) + y_offset
+        ans_a = np.array([fmod(i+720,360) for i in move_a]) #我决定插值之后再mod
+
+        return ans_x,ans_y,ans_a
         
 
 
-    '''
-    显示步伐检测图像
-      walkType取值：
-        - normal：正常行走模式
-        - abnormal：融合定位行走模式（每一步行走间隔大于1s）
-    '''
-    def show_steps(self, frequency=100, walkType='normal'):
-        a_vertical = self.coordinate_conversion()
-        steps = self.step_counter(frequency=frequency, walkType=walkType)
-
-        index_test = []
-        value_test = []
-        for v in steps:
-            index_test.append(v['index'])
-            value_test.append(v['acceleration'])
-
-        textstr = '='.join(('steps', str(len(steps))))
-        _, ax = plt.subplots()
-        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-        ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=14,
-            verticalalignment='top', bbox=props)
-        plt.plot(a_vertical)
-        plt.scatter(index_test, value_test, color='r')
-        plt.xlabel('samples')
-        plt.ylabel('vertical acceleration')
-        plt.show()
-
-    '''
-        输出一个数据分布散点图, 用来判断某一类型数据的噪声分布情况, 通常都会是高斯分布, 
-    '''
-    def show_gaussian(self, data, fit):
-        wipe = 150
-        data = data[wipe:len(data)-wipe]
-        division = 100
-        acc_min = np.min(data)
-        acc_max = np.max(data)
-        interval = (acc_max-acc_min)/division
-        counter = [0]*division
-        index = []
-
-        for k in range(division):
-            index.append(acc_min+k*interval)
-
-        for v in data:
-            for k in range(division):
-                if v>=(acc_min+k*interval) and v<(acc_min+(k+1)*interval):
-                    counter[k] = counter[k]+1
-        
-        textstr = '\n'.join((
-            r'$max=%.3f$' % (acc_max, ),
-            r'$min=%.3f$' % (acc_min, ),
-            r'$mean=%.3f$' % (np.mean(data), )))
-        _, ax = plt.subplots()
-        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-        ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=14,
-            verticalalignment='top', bbox=props)
-        plt.scatter(index, counter, label='distribution')
-
-        if fit==True:
-            length = math.ceil((acc_max-acc_min)/interval)
-            counterArr = length * [0]
-            for value in data:
-                key = int((value - acc_min) / interval)
-                if key >=0 and key <length:
-                    counterArr[key] += 1
-            normal_mean = np.mean(data)
-            normal_sigma = np.std(data)
-            normal_x = np.linspace(acc_min, acc_max, 100)
-            normal_y = norm.pdf(normal_x, normal_mean, normal_sigma)
-            normal_y = normal_y * np.max(counterArr) / np.max(normal_y)
-            ax.plot(normal_x, normal_y, 'r-', label='fitting')
-
-        plt.xlabel('acceleration')
-        plt.ylabel('total samples')
-        plt.legend()
-        plt.show()
-
-
-    '''
-        显示PDR运动轨迹图
-    '''
-    def show_trace(self, frequency=100, walkType='normal', initPosition=(0, 0), **kw):
-        plt.grid()
-        handles = []
-        labels = []
-
-        if 'real_trace' in kw:
-            real_trace = kw['real_trace'].T
-            trace_x = real_trace[0]
-            trace_y = real_trace[1]
-            l1, = plt.plot(trace_x, trace_y, color='g')
-            handles.append(l1)
-            labels.append('real tracks')
-            plt.scatter(trace_x, trace_y, color='orange')
-            for k in range(0, len(trace_x)):
-                plt.annotate(k, xy=(trace_x[k], trace_y[k]), xytext=(trace_x[k]+0.1,trace_y[k]+0.1), color='green')
-
-        if 'offset' in kw:
-            offset = kw['offset']
-        else:
-            offset = 0
-        
-        x, y, _, _ = self.pdr_position(frequency=frequency, walkType=walkType, offset=offset, initPosition=initPosition)
-        print('steps:', len(x)-1)
-
-        for k in range(0, len(x)):
-            plt.annotate(k, xy=(x[k], y[k]), xytext=(x[k]+0.1,y[k]+0.1))
-        l2, = plt.plot(x, y, 'o-')
-        handles.append(l2)
-        labels.append('pdr predicting')
-        plt.legend(handles=handles,labels=labels,loc='best')
-        plt.show()
