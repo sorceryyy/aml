@@ -6,7 +6,7 @@ from test import eval_model
 if __name__ == "__main__":
     data = DataProcessor()
     data.get_pdr_predict()
-    data.save_csv("try_out.csv")
+    data.save_csv("Location_output.csv")
 
     # acY = 2.24
     # acX = 0.0467

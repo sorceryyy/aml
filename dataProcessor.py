@@ -54,5 +54,5 @@ class DataProcessor():
     def save_csv(self,file = ""):
         '''input the data, save as csv'''
         save_path = os.path.abspath(os.path.join(self.path,file))
-        self.pdr_ans.to_csv(save_path)
+        self.pdr_ans.to_csv(save_path,index=None)
 
