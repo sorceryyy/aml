@@ -15,15 +15,171 @@ import math
 import numpy as np
 from scipy.stats import norm
 from scipy import interpolate
-from math import degrees, radians, fmod, atan2
+from math import degrees, radians, fmod, atan2,sqrt,pi
+from copy import deepcopy
+
+
+
 
 class Model(object):
-    def __init__(self, li, gr, ma,input,time):
+    def __init__(self, li, gr, ma,gy,input,time):
         self.linear = li
         self.gravity = gr
         self.magnetometer = ma
-        self.input = input  #0:维度，1：经度，2：方向
+        self.gyroscope = gy #记录陀螺仪数据
+        self.input = input  #0:纬度，1：经度，2：方向
         self.time = time
+        self.q_est = self.Quaternion(False,1,0,0,0)
+
+    '''
+        用accelerometer 和 gyroscope 计算四元数（quaternion）
+    '''
+    class Quaternion():
+        def __init__(self,empty=True,*args) -> None:
+            if empty:
+                self.q1 = 0
+                self.q2 = 0
+                self.q3 = 0
+                self.q4 = 0
+            
+            else:
+                assert len(args) == 4 #make sure input right
+                self.q1 = args[0]
+                self.q2 = args[1]
+                self.q3 = args[2]
+                self.q4 = args[3]
+
+        def quat_scalar(self,scalar):
+            self.q1 *= scalar
+            self.q2 *= scalar
+            self.q3 *= scalar
+            self.q4 *= scalar
+
+        def quat_conjugate(self):
+            self.q2 = -self.q2
+            self.q3 = -self.q3
+            self.q4 = -self.q4
+
+        def quat_Norm(self):
+            return sqrt(self.q1 **2,self.q2 **2,self.q3 **2,self.q4 **2)
+
+        def quat_Normalization(self):
+            norm = self.quat_Norm()
+            self.q1 /= norm
+            self.q2 /= norm
+            self.q3 /= norm
+            self.q4 /= norm
+
+
+    def quat_mult(self,L,R):
+        product = self.Quaternion()
+
+        product.q1 = (L.q1 * R.q1) - (L.q2 * R.q2) - (L.q3 * R.q3) - (L.q4 * R.q4)
+        product.q2 = (L.q1 * R.q2) + (L.q2 * R.q1) + (L.q3 * R.q4) - (L.q4 * R.q3)
+        product.q3 = (L.q1 * R.q3) - (L.q2 * R.q4) + (L.q3 * R.q1) + (L.q4 * R.q2)
+        product.q4 = (L.q1 * R.q4) + (L.q2 * R.q3) - (L.q3 * R.q2) + (L.q4 * R.q1)
+
+        return product
+
+    def quat_sub(self,L,R):
+        ans = self.Quaternion()
+        ans.q1 = L.q1 - R.q1
+        ans.q2 = L.q2 - R.q2
+        ans.q3 = L.q3 - R.q3
+        ans.q4 = L.q4 - R.q4
+        return ans
+
+    def quat_add(self,L,R):
+        ans = self.Quaternion()
+        ans.q1 = L.q1 + R.q1
+        ans.q2 = L.q2 + R.q2
+        ans.q3 = L.q3 + R.q3
+        ans.q4 = L.q4 + R.q4
+        return ans
+
+    def imu_filter(self,ax,ay,az,gx,gy,gz):
+        '''a filter of imu, calculate the 四元数'''
+        #some date that will be used later
+        gyro_mean_error = pi* (5.0/180.0)
+        beta = sqrt(3.0/4.0) * gyro_mean_error
+        delta_t = 0.01 #100HZ sampling frequency
+
+        q_est_prev = deepcopy(self.q_est)
+        q_est_dot = self.Quaternion()
+        q_a = self.Quaternion(False,0,ax,ay,az)
+
+        F_g = np.zeros((3),dtype=np.float32) #float
+        J_g = np.zeros((3,4),dtype=np.float32) #float
+
+        gradient = self.Quaternion()
+
+        q_w = self.Quaternion(False,0,gx,gy,gz)
+        q_w.quat_scalar(0.5)
+        q_w = self.quat_mult(q_est_prev,q_w)
+
+        q_a.quat_Normalization()
+
+        F_g[0] = 2*(q_est_prev.q2 * q_est_prev.q4 - q_est_prev.q1 * q_est_prev.q3) - q_a.q2;
+        F_g[1] = 2*(q_est_prev.q1 * q_est_prev.q2 + q_est_prev.q3* q_est_prev.q4) - q_a.q3;
+        F_g[2] = 2*(0.5 - q_est_prev.q2 * q_est_prev.q2 - q_est_prev.q3 * q_est_prev.q3) - q_a.q4;
+
+        #Compute the Jacobian matrix, for gravity
+        J_g[0][0] = -2 * q_est_prev.q3
+        J_g[0][1] =  2 * q_est_prev.q4
+        J_g[0][2] = -2 * q_est_prev.q1
+        J_g[0][3] =  2 * q_est_prev.q2
+    
+        J_g[1][0] = 2 * q_est_prev.q2
+        J_g[1][1] = 2 * q_est_prev.q1
+        J_g[1][2] = 2 * q_est_prev.q4
+        J_g[1][3] = 2 * q_est_prev.q3
+    
+        J_g[2][0] = 0
+        J_g[2][1] = -4 * q_est_prev.q2
+        J_g[2][2] = -4 * q_est_prev.q3
+        J_g[2][3] = 0
+    
+        #now computer the gradient, gradient = J_g'*F_g
+        gradient.q1 = J_g[0][0] * F_g[0] + J_g[1][0] * F_g[1] + J_g[2][0] * F_g[2]
+        gradient.q2 = J_g[0][1] * F_g[0] + J_g[1][1] * F_g[1] + J_g[2][1] * F_g[2]
+        gradient.q3 = J_g[0][2] * F_g[0] + J_g[1][2] * F_g[1] + J_g[2][2] * F_g[2]
+        gradient.q4 = J_g[0][3] * F_g[0] + J_g[1][3] * F_g[1] + J_g[2][3] * F_g[2]
+    
+        #Normalize the gradient
+        gradient.quat_Normalization()
+
+        gradient.quat_scalar(beta)
+        q_est_dot = self.quat_sub(q_w,gradient)
+        q_est_dot.quat_scalar(delta_t)
+        self.q_est = self.quat_add(q_est_prev,q_est_dot)
+        self.q_est.quat_Normalization()
+        return self.q_est.q0 ,self.q_est.q1,self.q_est.q2,self.q_est.q3
+
+    '''
+        用gyroscope 和 accelerator of gravity to obtain quaternion
+    '''
+    def obtain_quaternion(self):
+        assert len(self.gravity) == len(self.gyroscope)
+        self.quaternion = []
+        for i in range(len(self.gyroscope)):
+            q0,q1,q2,q3=self.imu_filter(self.gravity[i][0],self.gravity[i][1],self.gravity[i][2], \
+               self.gyroscope[i][0],self.gyroscope[i][1],self.gyroscope[i][2], )
+            self.quaternion.append([q0,q1,q2,q3])
+
+    '''
+        四元数转化为欧拉角
+    '''
+    def quaternion2euler(self):
+        rotation = self.quaternion
+        x = rotation[:, 0]
+        y = rotation[:, 1]
+        z = rotation[:, 2]
+        w = rotation[:, 3]
+        pitch = np.arcsin(2*(w*y-z*x))
+        roll = np.arctan2(2*(w*x+y*z),1-2*(x*x+y*y))
+        yaw = np.arctan2(2*(w*z+x*y),1-2*(z*z+y*y))
+        return pitch, roll, yaw
+    
 
     '''
         用accelerometer 和 magnetometer计算欧拉角
@@ -141,7 +297,8 @@ class Model(object):
     # 航向角
     # 根据姿势直接使用yaw
     def step_heading(self):
-        _, _, yaw = self.obtain_euler()
+        self.obtain_quaternion()
+        _, _, yaw = self.quaternion2euler()
         # init_theta = yaw[0] # 初始角度
         for i,v in enumerate(yaw):
             # yaw[i] = -(v-init_theta)
@@ -154,7 +311,7 @@ class Model(object):
     '''
     def pdr_position(self, frequency=100, walkType='normal', offset=0, initPosition=(0, 0)):
         #TODO check! 这里返回弧度制
-        yaw = self.step_heading()
+        self.yaw = self.step_heading()
         steps = self.step_counter(frequency=frequency, walkType=walkType)
         position_x = []
         position_y = []
@@ -169,7 +326,7 @@ class Model(object):
             index = v['index']
             length = self.step_stride(v['acceleration'])
             strides.append(length)
-            theta = yaw[index] + radians(offset)
+            theta = self.yaw[index] + radians(offset)
             angle.append(degrees(theta))
             x = x + length*np.sin(theta)
             y = y + length*np.cos(theta)
@@ -193,16 +350,25 @@ class Model(object):
         #interpolate
         tck_x = interpolate.splrep(step_time,np.array(n_x))
         tck_y = interpolate.splrep(step_time,np.array(n_y))
-        tck_a = interpolate.splrep(step_time,np.array(angle))
 
         tmp_time = np.array(predic_time,dtype=np.float64)
         move_x = interpolate.splev(tmp_time,tck_x)
         move_y = interpolate.splev(tmp_time,tck_y)
-        move_a = interpolate.splev(tmp_time,tck_a)
 
         ans_x = (np.array(move_x) * 0.000009) + x_offset
         ans_y = (np.array(move_y) * 0.00001141) + y_offset
-        ans_a = np.array([fmod(i+720,360) for i in move_a]) #我决定插值之后再mod
+
+        #TODO：用时间算出角度
+        ans_a = []
+        for i in range(len(predic_time)):
+            near = [self.yaw[j] for j in range(len(self.time)) if abs(self.time[j]-i)<0.07]
+            ans = self.input[2][0] #确保不会报错
+            if len(near) != 0:
+                ans = degrees(np.mean(np.array(near)))
+            ans_a.append(ans)
+
+        #TODO:通过线性拟合的部分
+        
 
         return ans_x,ans_y,ans_a
         
