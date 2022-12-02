@@ -183,6 +183,7 @@ class AngleDataset(Dataset):
                     }
 
         #interpolate
+        self.data_dic['loc']=np.array(sorted(self.data_dic['loc'],key=lambda x: x[0] ))
         tck = interpolate.splrep(self.data_dic['loc'][:,0],self.data_dic['loc'][:,1])
         label = interpolate.splev(self.data_dic['gyr'][:,0],tck)
 
@@ -198,7 +199,6 @@ class AngleDataset(Dataset):
             self.data = torch.FloatTensor(data)
         else:
             target = label
-            data = data[:, :-1]
             
             # Splitting training data into train & dev sets
             if mode == 'train':
@@ -338,6 +338,13 @@ def test(tt_set, model, device):
             preds.append(pred.detach().cpu())   # collect prediction
     preds = torch.cat(preds, dim=0).numpy()     # concatenate all predictions and convert to a numpy array
     return preds
+
+def angle_test(tt_set):
+    '''test angle of mlp'''
+    device = get_device()
+    model = torch.load(config['save_path'])
+    return test(tt_set,model,device=device)
+
 device = get_device()                 # get the current available device ('cpu' or 'cuda')
 os.makedirs('models', exist_ok=True)  # The trained model will be saved to ./models/
 target_only = False                   # TODO: Using 40 states & 2 tested_positive features
