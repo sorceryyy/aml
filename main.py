@@ -23,5 +23,5 @@ if __name__ == "__main__":
 
     # yaw = fmod(atan2(Yh,Xh)*360/3.1415926+720,360)
     # print(yaw)
-    # test_path = os.path.abspath(os.path.join(os.getcwd(), "./data"))
-    # eval_model(test_path=test_path)
+    test_path = os.path.abspath(os.path.join(os.getcwd(), "./data"))
+    eval_model(test_path=test_path)

@@ -25,6 +25,7 @@ class DataProcessor():
         linear =(self.data["lin"].values)[1:,1:].astype(np.float64)
         gravity = (self.data["acc"].values)[1:,1:].astype(np.float64)
         magnetometer = (self.data["mag"].values)[1:,1:].astype(np.float64)
+        gyroscope = (self.data["gyr"].values)[1:,1:].astype(np.float64)
         location_input = (self.data["inp"].values)[1:,[1,2,5]].astype(np.float64) #TODO: write in more stable way
         time = (self.data["mag"].values)[1:,0].astype(np.float64)
 
@@ -32,7 +33,7 @@ class DataProcessor():
         self.start_nan = len(self.data["inp"].dropna(axis=0,how="any"))  #-1是减header,-1是index!
         self.start_nan = min(len(self.data["inp"])//10 , self.start_nan)
 
-        self.pdr_model = pdr.Model(li=linear,gr=gravity,ma=magnetometer, \
+        self.pdr_model = pdr.Model(li=linear,gr=gravity,ma=magnetometer, gy=gyroscope, \
         input=location_input,time=time)
 
 

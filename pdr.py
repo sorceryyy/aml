@@ -61,7 +61,7 @@ class Model(object):
             self.q4 = -self.q4
 
         def quat_Norm(self):
-            return sqrt(self.q1 **2,self.q2 **2,self.q3 **2,self.q4 **2)
+            return sqrt(self.q1 **2 + self.q2 **2 + self.q3 **2 + self.q4 **2)
 
         def quat_Normalization(self):
             norm = self.quat_Norm()
@@ -153,7 +153,7 @@ class Model(object):
         q_est_dot.quat_scalar(delta_t)
         self.q_est = self.quat_add(q_est_prev,q_est_dot)
         self.q_est.quat_Normalization()
-        return self.q_est.q0 ,self.q_est.q1,self.q_est.q2,self.q_est.q3
+        return self.q_est.q1,self.q_est.q2,self.q_est.q3,self.q_est.q4
 
     '''
         用gyroscope 和 accelerator of gravity to obtain quaternion
@@ -162,9 +162,11 @@ class Model(object):
         assert len(self.gravity) == len(self.gyroscope)
         self.quaternion = []
         for i in range(len(self.gyroscope)):
-            q0,q1,q2,q3=self.imu_filter(self.gravity[i][0],self.gravity[i][1],self.gravity[i][2], \
+            q1,q2,q3,q4=self.imu_filter(self.gravity[i][0],self.gravity[i][1],self.gravity[i][2], \
                self.gyroscope[i][0],self.gyroscope[i][1],self.gyroscope[i][2], )
-            self.quaternion.append([q0,q1,q2,q3])
+            self.quaternion.append([q1,q2,q3,q4])
+        
+        self.quaternion = np.array(self.quaternion)
 
     '''
         四元数转化为欧拉角
@@ -295,23 +297,24 @@ class Model(object):
         return np.power(max_acceleration, 1/4) * 0.5
 
     # 航向角
-    # 根据姿势直接使用yaw
-    def step_heading(self):
+    # 根据姿势直接使用yaw,提供初始offset
+    def step_heading(self,offset):
         self.obtain_quaternion()
         _, _, yaw = self.quaternion2euler()
         # init_theta = yaw[0] # 初始角度
         for i,v in enumerate(yaw):
             # yaw[i] = -(v-init_theta)
-            yaw[i] = -v # 由于yaw逆时针为正向，转化为顺时针为正向更符合常规的思维方式
+            yaw[i] = -v + offset # 由于yaw逆时针为正向，转化为顺时针为正向更符合常规的思维方式
         return yaw
     
     '''
         步行轨迹的每一个相对坐标位置, offset表示初始角度
         返回的是预测作为坐标
     '''
-    def pdr_position(self, frequency=100, walkType='normal', offset=0, initPosition=(0, 0)):
+    def pdr_position(self, frequency=100, walkType='normal', initPosition=(0, 0),predict_time=0):
         #TODO check! 这里返回弧度制
-        self.yaw = self.step_heading()
+        offset = radians(self.input[2][predict_time-2])
+        self.yaw = self.step_heading(offset)
         steps = self.step_counter(frequency=frequency, walkType=walkType)
         position_x = []
         position_y = []
@@ -320,13 +323,13 @@ class Model(object):
         position_x.append(x)
         position_y.append(y)
         strides = []
-        angle = [offset]
+        angle = [offset] #TODO:check!
         time = [0]
         for v in steps:
             index = v['index']
             length = self.step_stride(v['acceleration'])
             strides.append(length)
-            theta = self.yaw[index] + radians(offset)
+            theta = self.yaw[index]
             angle.append(degrees(theta))
             x = x + length*np.sin(theta)
             y = y + length*np.cos(theta)
